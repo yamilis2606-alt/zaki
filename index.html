@@ -1,0 +1,725 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>ZÄKI Predio 3D</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@500;600&family=Work+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: lienzo 3D a pantalla completa con controles flotantes en vidrio oscuro (mismo look en ambos temas, a propósito) */
+:root {
+  --ink: #2f3a1b;          /* olivo profundo ZÄKI */
+  --glass: rgba(33, 38, 22, 0.78);
+  --glass-strong: rgba(33, 38, 22, 0.92);
+  --cream: #f6f1e4;
+  --muted: #c9c6b0;
+  --olive: #a3ae7a;
+  --mustard: #c9962b;
+  --terracotta: #b4573a;
+  --font-display: "Spectral", Cambria, Georgia, serif;
+  --font-body: "Work Sans", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: #8fa9bf; color: var(--cream); font-family: var(--font-body); overflow: hidden; }
+#stage { position: fixed; inset: 0; }
+#gl { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#gl.dragging { cursor: grabbing; }
+#labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+.lbl { position: absolute; transform: translate(-50%, -100%); white-space: nowrap; font-size: 12px; font-weight: 500; padding: 3px 8px 3px 4px; border-radius: 999px; background: var(--glass); color: var(--cream); display: flex; align-items: center; gap: 6px; }
+.lbl b { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 999px; background: var(--cream); color: var(--ink); font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.lbl.fut b { background: var(--mustard); }
+.panel { position: fixed; background: var(--glass); border-radius: 12px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+#brand { top: calc(12px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); padding: 10px 14px; max-width: min(340px, calc(100vw - 32px)); }
+#brand .eyebrow { font-size: 11px; letter-spacing: 0.22em; color: var(--mustard); font-weight: 600; }
+#brand h1 { margin: 2px 0 0; font-family: var(--font-display); font-weight: 600; font-size: 20px; line-height: 1.2; text-wrap: balance; }
+#brand p { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+#modes { top: calc(12px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); padding: 4px; display: flex; gap: 2px; }
+button { font: inherit; color: inherit; background: transparent; border: 0; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--mustard); outline-offset: 2px; }
+.seg { padding: 8px 12px; border-radius: 9px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.seg[aria-pressed="true"] { background: var(--cream); color: var(--ink); }
+#dock { left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); padding: 10px; display: flex; flex-direction: column; gap: 8px; max-width: 980px; margin-inline: auto; }
+#dock .row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+#dock .row::-webkit-scrollbar { display: none; }
+.chip { flex: 0 0 auto; padding: 7px 12px; border-radius: 999px; font-size: 13px; background: rgba(246, 241, 228, 0.1); color: var(--cream); }
+.chip[aria-pressed="true"] { background: var(--mustard); color: #2b2410; font-weight: 600; }
+#dock .meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); }
+.toggles { display: flex; gap: 6px; flex-wrap: wrap; }
+.tog { padding: 5px 10px; border-radius: 999px; font-size: 12px; border: 1px solid rgba(246, 241, 228, 0.25); color: var(--muted); }
+.tog[aria-pressed="true"] { border-color: var(--olive); color: var(--cream); background: rgba(163, 174, 122, 0.22); }
+#hint { min-width: 0; }
+#err { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; background: var(--ink); color: var(--cream); text-align: center; font-size: 15px; }
+@media (max-width: 560px) {
+  #brand h1 { font-size: 17px; }
+  #brand p { display: none; }
+  .seg { padding: 7px 9px; font-size: 12px; }
+  .lbl { font-size: 11px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div id="stage"><canvas id="gl" aria-label="Modelo 3D del predio ZÄKI. Arrastra para girar la vista."></canvas></div>
+<div id="labels" aria-hidden="true"></div>
+
+<header id="brand" class="panel">
+  <div class="eyebrow">ZÄKI</div>
+  <h1>Predio Nopala de Villagrán</h1>
+  <p>2.00 ha · modelo a escala del plan maestro · noviembre 2026</p>
+</header>
+
+<nav id="modes" class="panel" aria-label="Modo de vista">
+  <button class="seg" id="m-aerial" aria-pressed="true">Vista aérea</button>
+  <button class="seg" id="m-walk" aria-pressed="false">Recorrido 360°</button>
+</nav>
+
+<section id="dock" class="panel" aria-label="Puntos de vista">
+  <div class="row" id="views"></div>
+  <div class="meta">
+    <span id="hint">Arrastra para girar · rueda o pellizco para acercar · dos dedos o Shift para desplazar</span>
+    <div class="toggles">
+      <button class="tog" id="t-labels" aria-pressed="true">Etiquetas</button>
+      <button class="tog" id="t-future" aria-pressed="true">Etapas futuras</button>
+    </div>
+  </div>
+</section>
+
+<div id="err" hidden>Tu navegador no pudo iniciar WebGL 2, que se necesita para ver el modelo 3D. Ábrelo en Chrome, Edge, Safari o Firefox actualizados.</div>
+
+<script>
+(() => {
+"use strict";
+// ================= Datos del plan maestro (metros; x = oriente, y = sur) =================
+const POLY = [[94.2,185.4],[148.2,100.4],[197.6,8.3],[186.8,0],[71.5,3.9],[44.1,48.5],[7.2,102.3],[0,116]];
+const FRONT = [[0,116],[94.2,185.4]];
+const CERCO_GRANJA = [[74,7],[134,7],[134,50],[63,50]];
+const GATE_L = [28,136.6], GATE_S = [82,176.4];
+const CAM_L = [[28,136.6],[28,95],[84,95],[84,79]];
+const CAM_S = [[82,176.4],[112,138],[136,100],[157,62],[176,28],[176,22]];
+const CAM_R = [[170,42],[128,42]];
+const CX = 98, CY = 95;
+const fu = [FRONT[1][0]-FRONT[0][0], FRONT[1][1]-FRONT[0][1]];
+const FL = Math.hypot(fu[0], fu[1]); const U = [fu[0]/FL, fu[1]/FL];
+const NIN = [U[1], -U[0]];           // normal hacia adentro del predio
+const off = (p, k) => [p[0]+k*NIN[0], p[1]+k*NIN[1]];
+const along = (p, t) => [p[0]+t*U[0], p[1]+t*U[1]];
+
+// ================= Utilidades de matrices =================
+const M = {
+  persp(fovy, asp, n, f) { const t = 1/Math.tan(fovy/2), nf = 1/(n-f); return [t/asp,0,0,0, 0,t,0,0, 0,0,(f+n)*nf,-1, 0,0,2*f*n*nf,0]; },
+  ortho(l,r,b,t,n,f) { return [2/(r-l),0,0,0, 0,2/(t-b),0,0, 0,0,-2/(f-n),0, -(r+l)/(r-l),-(t+b)/(t-b),-(f+n)/(f-n),1]; },
+  look(e, c, up) {
+    let zx=e[0]-c[0], zy=e[1]-c[1], zz=e[2]-c[2]; let l=Math.hypot(zx,zy,zz); zx/=l; zy/=l; zz/=l;
+    let xx=up[1]*zz-up[2]*zy, xy=up[2]*zx-up[0]*zz, xz=up[0]*zy-up[1]*zx; l=Math.hypot(xx,xy,xz)||1; xx/=l; xy/=l; xz/=l;
+    const yx=zy*xz-zz*xy, yy=zz*xx-zx*xz, yz=zx*xy-zy*xx;
+    return [xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0, -(xx*e[0]+xy*e[1]+xz*e[2]), -(yx*e[0]+yy*e[1]+yz*e[2]), -(zx*e[0]+zy*e[1]+zz*e[2]), 1];
+  },
+  mul(a, b) { const o = new Array(16); for (let c=0;c<4;c++) for (let r=0;r<4;r++) { let s=0; for (let k=0;k<4;k++) s += a[k*4+r]*b[c*4+k]; o[c*4+r]=s; } return o; },
+  inv(m) {
+    const a=m, inv=new Array(16);
+    inv[0]=a[5]*a[10]*a[15]-a[5]*a[11]*a[14]-a[9]*a[6]*a[15]+a[9]*a[7]*a[14]+a[13]*a[6]*a[11]-a[13]*a[7]*a[10];
+    inv[4]=-a[4]*a[10]*a[15]+a[4]*a[11]*a[14]+a[8]*a[6]*a[15]-a[8]*a[7]*a[14]-a[12]*a[6]*a[11]+a[12]*a[7]*a[10];
+    inv[8]=a[4]*a[9]*a[15]-a[4]*a[11]*a[13]-a[8]*a[5]*a[15]+a[8]*a[7]*a[13]+a[12]*a[5]*a[11]-a[12]*a[7]*a[9];
+    inv[12]=-a[4]*a[9]*a[14]+a[4]*a[10]*a[13]+a[8]*a[5]*a[14]-a[8]*a[6]*a[13]-a[12]*a[5]*a[10]+a[12]*a[6]*a[9];
+    inv[1]=-a[1]*a[10]*a[15]+a[1]*a[11]*a[14]+a[9]*a[2]*a[15]-a[9]*a[3]*a[14]-a[13]*a[2]*a[11]+a[13]*a[3]*a[10];
+    inv[5]=a[0]*a[10]*a[15]-a[0]*a[11]*a[14]-a[8]*a[2]*a[15]+a[8]*a[3]*a[14]+a[12]*a[2]*a[11]-a[12]*a[3]*a[10];
+    inv[9]=-a[0]*a[9]*a[15]+a[0]*a[11]*a[13]+a[8]*a[1]*a[15]-a[8]*a[3]*a[13]-a[12]*a[1]*a[11]+a[12]*a[3]*a[9];
+    inv[13]=a[0]*a[9]*a[14]-a[0]*a[10]*a[13]-a[8]*a[1]*a[14]+a[8]*a[2]*a[13]+a[12]*a[1]*a[10]-a[12]*a[2]*a[9];
+    inv[2]=a[1]*a[6]*a[15]-a[1]*a[7]*a[14]-a[5]*a[2]*a[15]+a[5]*a[3]*a[14]+a[13]*a[2]*a[7]-a[13]*a[3]*a[6];
+    inv[6]=-a[0]*a[6]*a[15]+a[0]*a[7]*a[14]+a[4]*a[2]*a[15]-a[4]*a[3]*a[14]-a[12]*a[2]*a[7]+a[12]*a[3]*a[6];
+    inv[10]=a[0]*a[5]*a[15]-a[0]*a[7]*a[13]-a[4]*a[1]*a[15]+a[4]*a[3]*a[13]+a[12]*a[1]*a[7]-a[12]*a[3]*a[5];
+    inv[14]=-a[0]*a[5]*a[14]+a[0]*a[6]*a[13]+a[4]*a[1]*a[14]-a[4]*a[2]*a[13]-a[12]*a[1]*a[6]+a[12]*a[2]*a[5];
+    inv[3]=-a[1]*a[6]*a[11]+a[1]*a[7]*a[10]+a[5]*a[2]*a[11]-a[5]*a[3]*a[10]-a[9]*a[2]*a[7]+a[9]*a[3]*a[6];
+    inv[7]=a[0]*a[6]*a[11]-a[0]*a[7]*a[10]-a[4]*a[2]*a[11]+a[4]*a[3]*a[10]+a[8]*a[2]*a[7]-a[8]*a[3]*a[6];
+    inv[11]=-a[0]*a[5]*a[11]+a[0]*a[7]*a[9]+a[4]*a[1]*a[11]-a[4]*a[3]*a[9]-a[8]*a[1]*a[7]+a[8]*a[3]*a[5];
+    inv[15]=a[0]*a[5]*a[10]-a[0]*a[6]*a[9]-a[4]*a[1]*a[10]+a[4]*a[2]*a[9]+a[8]*a[1]*a[6]-a[8]*a[2]*a[5];
+    let det=a[0]*inv[0]+a[1]*inv[4]+a[2]*inv[8]+a[3]*inv[12]; det=1/det; for (let i=0;i<16;i++) inv[i]*=det; return inv;
+  },
+};
+
+// ================= Constructor de geometría =================
+function hex(h) { const n = parseInt(h.slice(1), 16); return [(n>>16&255)/255, (n>>8&255)/255, (n&255)/255]; }
+class Mesh {
+  constructor() { this.p = []; this.c = []; }
+  tri(a, b, c, col) { this.p.push(...a, ...b, ...c); for (let i=0;i<3;i++) this.c.push(...col); }
+  quad(a, b, c, d, col) { this.tri(a, b, c, col); this.tri(a, c, d, col); }
+}
+const W = (x, y, h) => [x-CX, h, y-CY];          // sitio → mundo (Y arriba, Z al sur)
+let rng = 1234567; const rand = () => (rng = (rng*16807) % 2147483647) / 2147483647;
+function shade(col, k) { return col.map(v => Math.min(1, Math.max(0, v*k))); }
+
+function box(m, x0, y0, x1, y1, h0, h1, color, top) {
+  const c = hex(color), t = top ? hex(top) : c;
+  const A=W(x0,y0,h0),B=W(x1,y0,h0),C=W(x1,y1,h0),D=W(x0,y1,h0),E=W(x0,y0,h1),F=W(x1,y0,h1),G=W(x1,y1,h1),H=W(x0,y1,h1);
+  m.quad(E,F,G,H,t); m.quad(A,B,F,E,c); m.quad(B,C,G,F,c); m.quad(C,D,H,G,c); m.quad(D,A,E,H,c);
+}
+function gable(m, x0, y0, x1, y1, eave, ridge, roof, wall, ov=0.5) {
+  // cumbrera a lo largo del eje x (naves oriente-poniente)
+  const yc = (y0+y1)/2, r = hex(roof), w = hex(wall);
+  const xa=x0-ov, xb=x1+ov, ya=y0-ov, yb=y1+ov, dE = eave - (ridge-eave)*ov/((y1-y0)/2);
+  m.quad(W(xa,ya,dE), W(xb,ya,dE), W(xb,yc,ridge), W(xa,yc,ridge), r);
+  m.quad(W(xa,yb,dE), W(xb,yb,dE), W(xb,yc,ridge), W(xa,yc,ridge), r);
+  m.tri(W(x0,y0,eave), W(x0,y1,eave), W(x0,yc,ridge), w);
+  m.tri(W(x1,y0,eave), W(x1,y1,eave), W(x1,yc,ridge), w);
+}
+function cyl(m, cx, cy, r, h0, h1, color, seg=16) {
+  const c = hex(color), ct = shade(c, 1.08);
+  for (let i=0;i<seg;i++) {
+    const a0=i/seg*Math.PI*2, a1=(i+1)/seg*Math.PI*2;
+    const p0=[cx+Math.cos(a0)*r, cy+Math.sin(a0)*r], p1=[cx+Math.cos(a1)*r, cy+Math.sin(a1)*r];
+    m.quad(W(p0[0],p0[1],h0), W(p1[0],p1[1],h0), W(p1[0],p1[1],h1), W(p0[0],p0[1],h1), c);
+    m.tri(W(cx,cy,h1), W(p0[0],p0[1],h1), W(p1[0],p1[1],h1), ct);
+  }
+}
+function blob(m, cx, cy, h, rx, ry, color, seg=7, ring=4) {
+  const base = hex(color), pts = [];
+  for (let j=0;j<=ring;j++) { const v = j/ring*Math.PI, row = [];
+    for (let i=0;i<seg;i++) { const a = i/seg*Math.PI*2, k = 0.85+rand()*0.3;
+      row.push(W(cx+Math.cos(a)*Math.sin(v)*rx*k, cy+Math.sin(a)*Math.sin(v)*rx*k, h+Math.cos(v)*ry*(j===0||j===ring?1:k))); }
+    pts.push(row); }
+  for (let j=0;j<ring;j++) for (let i=0;i<seg;i++) { const i2=(i+1)%seg, col = shade(base, 0.9+rand()*0.2);
+    m.quad(pts[j][i], pts[j][i2], pts[j+1][i2], pts[j+1][i], col); }
+}
+function mound(m, cx, cy, r, hgt, color, seg=9) {
+  const c = hex(color);
+  for (let i=0;i<seg;i++) { const a0=i/seg*Math.PI*2, a1=(i+1)/seg*Math.PI*2;
+    const k0=0.8+0.4*((i*37)%7)/7, k1=0.8+0.4*(((i+1)%seg*37)%7)/7;
+    const o0=W(cx+Math.cos(a0)*r*k0, cy+Math.sin(a0)*r*k0, 0), o1=W(cx+Math.cos(a1)*r*k1, cy+Math.sin(a1)*r*k1, 0);
+    const m0=W(cx+Math.cos(a0)*r*0.45*k0, cy+Math.sin(a0)*r*0.45*k0, hgt*0.7), m1=W(cx+Math.cos(a1)*r*0.45*k1, cy+Math.sin(a1)*r*0.45*k1, hgt*0.7);
+    m.quad(o0, o1, m1, m0, shade(c, 0.92+0.1*Math.sin(i))); m.tri(m0, m1, W(cx, cy, hgt), shade(c, 1.04)); }
+}
+function earclip(poly) {
+  const pts = poly.slice(); let area = 0;
+  for (let i=0;i<pts.length;i++) { const a=pts[i], b=pts[(i+1)%pts.length]; area += a[0]*b[1]-b[0]*a[1]; }
+  if (area < 0) pts.reverse();
+  const idx = pts.map((_, i) => i), tris = [];
+  const cross = (a,b,c) => (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+  const inside = (p,a,b,c) => cross(a,b,p)>=0 && cross(b,c,p)>=0 && cross(c,a,p)>=0;
+  let guard = 0;
+  while (idx.length > 3 && guard++ < 500) {
+    let cut = false;
+    for (let i=0;i<idx.length;i++) {
+      const ia=idx[(i+idx.length-1)%idx.length], ib=idx[i], ic=idx[(i+1)%idx.length];
+      const a=pts[ia], b=pts[ib], c=pts[ic];
+      if (cross(a,b,c) <= 0) continue;
+      if (idx.some(j => j!==ia && j!==ib && j!==ic && inside(pts[j],a,b,c))) continue;
+      tris.push([a,b,c]); idx.splice(i,1); cut = true; break;
+    }
+    if (!cut) break;
+  }
+  if (idx.length === 3) tris.push(idx.map(i => pts[i]));
+  return tris;
+}
+function flat(m, poly, h, color) { const c = hex(color); for (const [a,b,cc] of earclip(poly)) m.tri(W(a[0],a[1],h), W(b[0],b[1],h), W(cc[0],cc[1],h), c); }
+function ribbon(m, pts, width, h, color, dash) {
+  const c = hex(color);
+  for (let i=0;i<pts.length-1;i++) {
+    const a=pts[i], b=pts[i+1], d=[b[0]-a[0], b[1]-a[1]], L=Math.hypot(d[0],d[1]); if (!L) continue;
+    const n=[-d[1]/L*width/2, d[0]/L*width/2];
+    const steps = dash ? Math.floor(L/dash[0]) : 1;
+    for (let s=0;s<steps;s++) {
+      const t0 = dash ? s*dash[0]/L : 0, t1 = dash ? Math.min(1, (s*dash[0]+dash[1])/L) : 1;
+      const p0=[a[0]+d[0]*t0, a[1]+d[1]*t0], p1=[a[0]+d[0]*t1, a[1]+d[1]*t1];
+      m.quad(W(p0[0]+n[0],p0[1]+n[1],h), W(p1[0]+n[0],p1[1]+n[1],h), W(p1[0]-n[0],p1[1]-n[1],h), W(p0[0]-n[0],p0[1]-n[1],h), c);
+    }
+    if (!dash && i < pts.length-2) { // rellenar junta
+      const r = width/2, j=b, cc=hex(color);
+      for (let k=0;k<8;k++){ const a0=k/8*Math.PI*2,a1=(k+1)/8*Math.PI*2; m.tri(W(j[0],j[1],h), W(j[0]+Math.cos(a0)*r,j[1]+Math.sin(a0)*r,h), W(j[0]+Math.cos(a1)*r,j[1]+Math.sin(a1)*r,h), cc);}
+    }
+  }
+}
+function vwall(m, a, b, h0, h1, color) { m.quad(W(a[0],a[1],h0), W(b[0],b[1],h0), W(b[0],b[1],h1), W(a[0],a[1],h1), hex(color)); }
+function fence(m, pts, closed, postColor, skip=[]) {
+  const P = closed ? [...pts, pts[0]] : pts;
+  for (let i=0;i<P.length-1;i++) {
+    const a=P[i], b=P[i+1], L=Math.hypot(b[0]-a[0], b[1]-a[1]), n=Math.max(1, Math.round(L/4));
+    for (let k=0;k<=n;k++) { const t=k/n, p=[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
+      if (skip.some(s => Math.hypot(s[0]-p[0], s[1]-p[1]) < 4.5)) continue;
+      box(m, p[0]-0.06, p[1]-0.06, p[0]+0.06, p[1]+0.06, 0, 1.8, postColor); }
+    const segs = []; let cur = [a];
+    for (let k=1;k<=60;k++) { const t=k/60, p=[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
+      if (skip.some(s => Math.hypot(s[0]-p[0], s[1]-p[1]) < 4.5)) { if (cur.length>1) segs.push(cur); cur=[]; } else cur.push(p); }
+    if (cur.length>1) segs.push(cur);
+    for (const sgm of segs) { const s0=sgm[0], s1=sgm[sgm.length-1];
+      for (const hh of [0.35, 0.7, 1.05, 1.4, 1.75]) vwall(m, s0, s1, hh, hh+0.03, "#6f6d66"); }
+  }
+}
+function tree(m, x, y, s=1) {
+  box(m, x-0.18*s, y-0.18*s, x+0.18*s, y+0.18*s, 0, 2.4*s, "#5b4a38");
+  const tone = ["#6b7a3a", "#5f6e33", "#77843f", "#667539"][Math.floor(rand()*4)];
+  blob(m, x, y, 3.3*s, 2.4*s, 1.7*s, tone);
+  blob(m, x+0.9*s, y-0.5*s, 2.6*s, 1.5*s, 1.1*s, tone, 6, 3);
+}
+function shrub(m, x, y, s=1) { blob(m, x, y, 0.7*s, 1.3*s, 0.8*s, ["#6f7340", "#7a7a45", "#5f6a38"][Math.floor(rand()*3)], 6, 3); }
+function pip(p, poly) { let c=false; for (let i=0,j=poly.length-1;i<poly.length;j=i++){ const [xi,yi]=poly[i],[xj,yj]=poly[j]; if (((yi>p[1])!==(yj>p[1])) && (p[0] < (xj-xi)*(p[1]-yi)/(yj-yi)+xi)) c=!c; } return c; }
+
+// ================= Escena =================
+const base = new Mesh(), fut = new Mesh();
+const LABELS = [];
+const lab = (id, text, x, y, h, future) => LABELS.push({ id, text, p: W(x, y, h), future });
+
+// Terreno y contexto
+flat(base, [[-1600,-1600],[1800,-1600],[1800,1800],[-1600,1800]], -0.02, "#b9a67f");
+for (let i=0;i<16;i++) { const a = i/16*Math.PI*2 + rand()*0.3, d = 750+rand()*450;
+  mound(base, CX+Math.cos(a)*d, CY+Math.sin(a)*d, 160+rand()*220, 35+rand()*90, ["#9c9a6a","#a8a072","#8f9463","#b0a47a"][i%4]); }
+// parcelas de cultivo al otro lado de la carretera
+for (let k=0;k<9;k++) { const t0 = -260 + k*62, t1 = t0 + 58;
+  for (let r=0;r<2;r++) { const d0 = -32 - r*120, d1 = d0 - 110;
+    const q = [off(along(FRONT[0], t0), d0), off(along(FRONT[0], t1), d0), off(along(FRONT[0], t1), d1), off(along(FRONT[0], t0), d1)];
+    flat(base, q, 0.0, ["#a99567","#9d8b5d","#b3a074","#8e9460"][(k+r*3)%4]);
+    for (let s=8;s<58;s+=8) ribbon(base, [off(along(FRONT[0], t0+s), d0-2), off(along(FRONT[0], t0+s), d1+2)], 0.6, 0.01, "#8f7f55"); } }
+// predio nivelado y franja frontal
+flat(base, POLY, 0.02, "#c4b38c");
+flat(base, [FRONT[0], FRONT[1], off(FRONT[1], 20), off(FRONT[0], 20)], 0.03, "#cdbd99");
+// carretera federal 21
+const R0 = off(along(FRONT[0], -650), -14), R1 = off(along(FRONT[1], 650), -14);
+ribbon(base, [R0, R1], 13, 0.04, "#8b8576");
+ribbon(base, [R0, R1], 10, 0.06, "#4a4a47");
+ribbon(base, [off(R0, 4.6), off(R1, 4.6)], 0.15, 0.07, "#e9e6dc");
+ribbon(base, [off(R0, -4.6), off(R1, -4.6)], 0.15, 0.07, "#e9e6dc");
+ribbon(base, [R0, R1], 0.15, 0.07, "#d6a52e", [9, 4]);
+// accesos desde la carretera
+ribbon(base, [off(GATE_L, -9), GATE_L], 7, 0.05, "#6b6a66");
+ribbon(base, [off(GATE_S, -9), GATE_S], 6, 0.05, "#a39882");
+// vegetación fuera del predio
+for (let i=0;i<520;i++) { const x = CX + (rand()-0.5)*900, y = CY + (rand()-0.5)*900, p=[x,y];
+  if (pip(p, POLY)) continue;
+  const dRoad = Math.abs((x-FRONT[0][0])*NIN[0] + (y-FRONT[0][1])*NIN[1] + 14);
+  if (dRoad < 12) continue;
+  const side = (x-FRONT[0][0])*NIN[0] + (y-FRONT[0][1])*NIN[1];
+  if (side < -25 && side > -270 && rand() < 0.85) continue;  // dentro de parcelas
+  if (rand() < 0.35) tree(base, x, y, 0.7+rand()*0.5); else shrub(base, x, y, 0.6+rand()*0.8); }
+
+// caminos internos
+ribbon(base, CAM_L, 6, 0.06, "#6b6a66");
+ribbon(base, CAM_S, 5, 0.05, "#a39882");
+ribbon(base, CAM_R, 4, 0.05, "#a39882");
+ribbon(base, [[28,111.5],[28,114.5]], 6.2, 0.075, "#2f2f2b");   // vado limpio
+ribbon(base, [along(off(GATE_S, 2), 0), along(off(GATE_S, 5), 0)], 5.2, 0.065, "#2f2f2b"); // vado servicio
+
+// cercos
+fence(base, POLY, true, "#8c8a83", [GATE_L, GATE_S]);
+fence(base, CERCO_GRANJA, true, "#5b6b2f", [[100,50],[131,42]]);
+fence(base, [[109,101],[125,101],[125,114],[109,114]], true, "#b4573a", [[117,114]]);
+
+// rompevientos
+for (let x=82; x<=182; x+=7) tree(base, x, 4 + 3.9*(186.8-x)/115.3 + 1.5, 0.95+rand()*0.2);
+for (let t=12; t<=108; t+=8) { const p = off(along(FRONT[0], t), 5); if (Math.abs(p[0]-31)>9 && Math.abs(p[0]-85)>9) tree(base, p[0], p[1], 0.9+rand()*0.25); }
+for (const [x,y] of [[38,84],[60,86],[36,98],[67,100]]) tree(base, x, y, 0.85);
+
+// ---- Edificios ----
+function nave(m, x0, y0, x1, y1) {
+  box(m, x0, y0, x1, y1, 0, 0.15, "#bdb8ad");
+  box(m, x0, y0, x1, y1, 0.15, 1.0, "#e8e2d4");
+  box(m, x0+0.05, y0+0.05, x1-0.05, y1-0.05, 1.0, 2.7, "#56652f");
+  for (let x=x0; x<=x1+0.01; x+=5) { box(m, x-0.12, y0-0.12, x+0.12, y0+0.12, 0, 2.75, "#9a9d98"); box(m, x-0.12, y1-0.12, x+0.12, y1+0.12, 0, 2.75, "#9a9d98"); }
+  gable(m, x0, y0, x1, y1, 2.75, 4.4, "#a9adb0", "#e8e2d4", 0.5);
+  box(m, x0+1, (y0+y1)/2-0.5, x1-1, (y0+y1)/2+0.5, 4.3, 4.75, "#8f9396");
+  box(m, x0-0.02, (y0+y1)/2-1.2, x0+0.02, (y0+y1)/2+1.2, 0.15, 2.4, "#3d3a33"); // puerta poniente
+}
+nave(base, 78, 10, 128, 22); lab(1, "Nave 1 · maternidad y engorda", 103, 16, 6);
+nave(fut, 78, 34, 112, 46); lab(2, "Nave 2 · ampliación", 95, 40, 6, true);
+// almacén
+box(base, 118, 34, 128, 41, 0, 3.5, "#d9cdb2"); gable(base, 118, 34, 128, 41, 3.5, 5.0, "#a9adb0", "#d9cdb2", 0.4);
+box(base, 127.98, 35.8, 128.04, 39.2, 0, 3.0, "#5d5a50"); lab(6, "Almacén de alimento", 123, 37.5, 6.5);
+// planta de proceso
+box(base, 55, 66, 77.5, 78.5, 0, 0.12, "#bdb8ad");
+box(base, 55, 66, 65, 76, 0.12, 4.2, "#efebe2");
+box(base, 65, 71, 75, 76, 0.12, 4.2, "#efebe2");
+box(base, 65, 66, 75, 71, 0.12, 4.2, "#dde5ea");
+box(base, 54.6, 65.6, 75.4, 76.4, 4.2, 4.5, "#9aa0a3");
+box(base, 75, 66, 77.2, 71, 0, 1.2, "#bdb8ad");                    // andén
+box(base, 75, 65.6, 77.6, 71.4, 3.9, 4.05, "#9aa0a3");             // marquesina
+box(base, 74.98, 67.2, 75.04, 69.8, 1.2, 3.6, "#3d4a55");          // cortina del andén
+box(base, 54.96, 69.5, 55.02, 71.5, 0.12, 2.4, "#3d3a33");         // puerta animales
+box(base, 61, 75.98, 63, 76.04, 0.12, 2.3, "#3d3a33");             // puerta personal
+for (const x of [57,59,67,70,73]) box(base, x, 75.98, x+1.2, 76.04, 1.6, 2.4, "#6f8a99");
+lab(3, "Planta: sacrificio, despiece, cocina y frío", 65, 71, 7.5);
+box(fut, 65, 61, 70, 66, 0, 4.2, "#dde5ea"); box(fut, 64.8, 60.8, 70.2, 66, 4.2, 4.45, "#9aa0a3"); lab(9, "2.º cuarto frío · año 4", 67.5, 63.5, 6, true);
+box(fut, 65, 76, 75, 78.5, 0.12, 4.2, "#efebe2"); box(fut, 64.8, 76, 75.2, 78.7, 4.2, 4.45, "#9aa0a3"); lab(10, "Ampliación de cocina · año 5", 70, 77.5, 5.5, true);
+// patio de maniobras y camión refrigerado
+box(base, 77.2, 64, 93, 79, 0, 0.07, "#bcb6a8");
+box(base, 78, 67.3, 86, 69.7, 0.9, 3.7, "#f2f2ee"); box(base, 86.2, 67.4, 88.4, 69.6, 0.8, 3.0, "#e4e8ec");
+box(base, 86.25, 67.6, 86.3, 69.4, 2.0, 2.8, "#33424d"); box(base, 78.2, 67.5, 88.2, 69.5, 0.3, 0.9, "#2b2b2b");
+lab(13, "Patio de maniobras", 88, 75, 3);
+// oficina y sanitarios
+box(base, 42, 88, 56, 93, 0, 3.2, "#efe6d6");
+box(base, 42, 92.98, 50, 93.18, 0, 3.2, "#b4573a");
+box(base, 41.4, 87.6, 56.6, 95.6, 3.2, 3.45, "#8a857a");
+for (const x of [42.3, 49, 55.7]) box(base, x-0.1, 95.2, x+0.1, 95.4, 0, 3.2, "#5d5a50");
+box(base, 44, 93.18, 46.4, 93.22, 0, 2.3, "#3d3a33"); box(base, 51, 93.18, 54.5, 93.22, 1.0, 2.4, "#6f8a99");
+lab(8, "Oficina y venta directa", 46, 90.5, 5.2); lab(11, "Sanitarios y comedor", 53, 90.5, 5.2);
+// letrero ZÄKI en acceso
+box(base, 35.4, 127.2, 35.6, 127.4, 0, 2.0, "#3d3a33"); box(base, 34.0, 127.1, 37.0, 127.5, 2.0, 3.0, "#b4573a");
+// estacionamiento
+box(base, 40, 100, 65, 110, 0, 0.06, "#55554f");
+for (let x=40.2; x<=65; x+=3.1) box(base, x, 100.3, x+0.12, 105.2, 0.06, 0.07, "#e9e6dc");
+for (const [x, col] of [[41,"#8b2e2e"],[47.2,"#d8d8d2"],[53.4,"#3e4a5a"]]) { box(base, x+0.3, 100.6, x+2.1, 105, 0.25, 1.0, col); box(base, x+0.45, 101.6, x+1.95, 104, 1.0, 1.5, shade(hex(col),0.85).map(v=>Math.round(v*255)).reduce((s,v)=>s+v.toString(16).padStart(2,"0"),"#")); }
+lab(12, "Estacionamiento", 52, 105, 3);
+// caseta y pluma
+box(base, 30, 106, 33, 109, 0, 2.7, "#f2f0ea"); box(base, 29.6, 105.6, 33.4, 109.4, 2.7, 2.9, "#5d5a50");
+box(base, 30.2, 109.02, 32.8, 109.06, 1.1, 2.0, "#6f8a99");
+box(base, 24.4, 110.2, 30, 110.35, 1.0, 1.12, "#c0392b");
+lab(14, "Caseta y vado sanitario", 31.5, 107.5, 4.5);
+// cisterna y tanque elevado
+box(base, 82, 53, 90, 58, 0, 0.6, "#bdb8ad");
+for (const [dx,dy] of [[-0.9,-0.9],[0.9,-0.9],[0.9,0.9],[-0.9,0.9]]) box(base, 88+dx-0.08, 55.5+dy-0.08, 88+dx+0.08, 55.5+dy+0.08, 0.6, 6.2, "#7d7b74");
+box(base, 86.9, 54.4, 89.1, 56.6, 6.2, 6.35, "#7d7b74"); cyl(base, 88, 55.5, 0.85, 6.35, 8.0, "#2d2d2b", 14);
+lab(15, "Cisterna y tanque", 86, 55.5, 9.5);
+// PTAR
+box(base, 100, 92, 110, 98, 0, 0.1, "#bdb8ad"); cyl(base, 104, 95, 1.1, 0.1, 2.3, "#2d2d2b", 16);
+box(base, 107.2, 93.4, 108.8, 95, 0.1, 0.7, "#a8a296"); box(base, 107.4, 96.2, 108.4, 97.2, 0.1, 0.4, "#a8a296");
+lab(16, "PTAR · biodigestor", 105, 95, 4.5);
+// cuarentena
+box(base, 112, 104, 122, 111, 0, 0.12, "#bdb8ad"); box(base, 112, 104, 122, 111, 0.12, 3.0, "#e8e2d4");
+gable(base, 112, 104, 122, 111, 3.0, 4.2, "#b4573a", "#e8e2d4", 0.4);
+box(base, 116, 110.98, 118, 111.04, 0.12, 2.3, "#3d3a33");
+lab(18, "Cuarentena de pie de cría", 117, 107.5, 6);
+// composta y mortalidad
+box(base, 168, 10, 180, 20, 0, 0.2, "#bdb8ad");
+box(base, 168, 10, 180, 10.25, 0.2, 1.4, "#a8a296"); box(base, 168, 10, 168.25, 20, 0.2, 1.4, "#a8a296"); box(base, 179.75, 10, 180, 20, 0.2, 1.4, "#a8a296");
+for (const [x,y] of [[168.1,10.1],[179.9,10.1],[168.1,19.9],[179.9,19.9],[174,10.1],[174,19.9]]) box(base, x-0.1, y-0.1, x+0.1, y+0.1, 0.2, 4.0, "#7d7b74");
+box(base, 167.6, 9.6, 180.4, 20.6, 4.0, 4.15, "#a9adb0");
+for (const [x,y,r] of [[171,13.5,1.9],[175.5,13.2,2.1],[172.5,17.4,1.6],[177,17.2,1.4]]) mound(base, x, y, r, 1.2, "#5a4632", 8);
+lab(7, "Composta y conejaza", 174, 15, 6.5);
+box(base, 160, 22, 165, 27, 0, 0.3, "#bdb8ad"); box(base, 161.2, 23.2, 163.8, 25.8, 0.3, 0.75, "#8c877c");
+lab(17, "Fosa de mortalidad", 162.5, 24.5, 3);
+// reserva nave 3
+for (const [x,y] of [[100,52],[150,52],[150,64],[100,64]]) box(fut, x-0.07, y-0.07, x+0.07, y+0.07, 0, 0.9, "#d9822b");
+ribbon(fut, [[100,52],[150,52],[150,64],[100,64],[100,52]], 0.3, 0.05, "#d9822b", [3, 1.8]);
+lab(19, "Reserva · nave 3", 125, 58, 2.5, true);
+
+// ================= WebGL =================
+const canvas = document.getElementById("gl");
+const gl = canvas.getContext("webgl2", { antialias: true, preserveDrawingBuffer: false });
+if (!gl) { document.getElementById("err").hidden = false; return; }
+
+function shader(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs) { const p = gl.createProgram(); gl.attachShader(p, shader(gl.VERTEX_SHADER, vs)); gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); return p; }
+
+const VS = `#version 300 es
+in vec3 aPos; in vec3 aNor; in vec3 aCol;
+uniform mat4 uVP; uniform mat4 uLVP;
+out vec3 vPos; out vec3 vNor; out vec3 vCol; out vec4 vL;
+void main(){ vPos=aPos; vNor=aNor; vCol=aCol; vL=uLVP*vec4(aPos,1.0); gl_Position=uVP*vec4(aPos,1.0); }`;
+const FS = `#version 300 es
+precision highp float;
+in vec3 vPos; in vec3 vNor; in vec3 vCol; in vec4 vL;
+uniform vec3 uSun; uniform vec3 uEye; uniform sampler2D uShadow; uniform float uTexel;
+uniform vec3 uHorizon;
+out vec4 o;
+void main(){
+  vec3 n = normalize(vNor);
+  vec3 v = uEye - vPos;
+  if (dot(n, v) < 0.0) n = -n;
+  float nd = dot(n, uSun);
+  vec3 lc = vL.xyz / vL.w * 0.5 + 0.5;
+  float sh = 1.0;
+  if (lc.x > 0.0 && lc.x < 1.0 && lc.y > 0.0 && lc.y < 1.0 && lc.z < 1.0) {
+    float bias = 0.0008 + 0.0025 * (1.0 - clamp(nd, 0.0, 1.0));
+    float s = 0.0;
+    for (int i=-1;i<=1;i++) for (int j=-1;j<=1;j++) {
+      float d = texture(uShadow, lc.xy + vec2(i,j)*uTexel).r;
+      s += lc.z - bias > d ? 0.0 : 1.0;
+    }
+    sh = s / 9.0;
+  }
+  float diff = max(nd, 0.0) * sh;
+  vec3 sky = vec3(0.62, 0.70, 0.80), gnd = vec3(0.50, 0.44, 0.34);
+  vec3 amb = mix(gnd, sky, n.y*0.5+0.5) * 0.55;
+  vec3 col = vCol * (amb + vec3(1.0, 0.95, 0.86) * diff * 0.95);
+  float dist = length(v);
+  float fog = 1.0 - exp(-pow(dist * 0.00085, 1.6));
+  col = mix(col, uHorizon, clamp(fog, 0.0, 1.0));
+  col = pow(col, vec3(0.94));
+  o = vec4(col, 1.0);
+}`;
+const SVS = `#version 300 es
+in vec3 aPos; uniform mat4 uLVP; void main(){ gl_Position = uLVP*vec4(aPos,1.0); }`;
+const SFS = `#version 300 es
+precision highp float; out vec4 o; void main(){ o = vec4(1.0); }`;
+const KVS = `#version 300 es
+in vec2 aXY; out vec2 vXY; void main(){ vXY=aXY; gl_Position=vec4(aXY,0.9999,1.0); }`;
+const KFS = `#version 300 es
+precision highp float; in vec2 vXY; uniform mat4 uInvVP; uniform vec3 uSun; uniform vec3 uHorizon; out vec4 o;
+void main(){
+  vec4 a = uInvVP*vec4(vXY,-1.0,1.0); vec4 b = uInvVP*vec4(vXY,1.0,1.0);
+  vec3 d = normalize(b.xyz/b.w - a.xyz/a.w);
+  float h = clamp(d.y, -0.2, 1.0);
+  vec3 zen = vec3(0.36, 0.55, 0.78);
+  vec3 col = mix(uHorizon, zen, pow(max(h,0.0), 0.55));
+  float s = max(dot(d, uSun), 0.0);
+  col += vec3(1.0,0.9,0.7) * (pow(s, 900.0)*1.4 + pow(s, 12.0)*0.12);
+  if (d.y < 0.0) col = mix(uHorizon, vec3(0.66,0.6,0.48), clamp(-d.y*6.0,0.0,1.0));
+  o = vec4(col, 1.0);
+}`;
+const P = program(VS, FS), PS = program(SVS, SFS), PK = program(KVS, KFS);
+
+function upload(mesh) {
+  const pos = new Float32Array(mesh.p), col = new Float32Array(mesh.c), nor = new Float32Array(mesh.p.length);
+  for (let i=0;i<pos.length;i+=9) {
+    const ax=pos[i+3]-pos[i], ay=pos[i+4]-pos[i+1], az=pos[i+5]-pos[i+2], bx=pos[i+6]-pos[i], by=pos[i+7]-pos[i+1], bz=pos[i+8]-pos[i+2];
+    let nx=ay*bz-az*by, ny=az*bx-ax*bz, nz=ax*by-ay*bx; const l=Math.hypot(nx,ny,nz)||1; nx/=l; ny/=l; nz/=l;
+    for (let k=0;k<3;k++) { nor[i+k*3]=nx; nor[i+k*3+1]=ny; nor[i+k*3+2]=nz; }
+  }
+  const mk = (prog) => { const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+    for (const [name, data] of [["aPos", pos], ["aNor", nor], ["aCol", col]]) { const loc = gl.getAttribLocation(prog, name); if (loc < 0) continue;
+      const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0); }
+    gl.bindVertexArray(null); return vao; };
+  return { vao: mk(P), svao: mk(PS), n: pos.length/3 };
+}
+const G = { base: upload(base), fut: upload(fut) };
+const quadVAO = (() => { const vao = gl.createVertexArray(); gl.bindVertexArray(vao); const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, 1,1, -1,-1, 1,1, -1,1]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(PK, "aXY"); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0); gl.bindVertexArray(null); return vao; })();
+
+// mapa de sombras
+const SM = 2048;
+const shadowTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, shadowTex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, SM, SM, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+const shadowFB = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFB);
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, shadowTex, 0); gl.drawBuffers([gl.NONE]); gl.readBuffer(gl.NONE);
+gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+const az = 235*Math.PI/180, el = 42*Math.PI/180;      // sol de la tarde, desde el suroeste
+const SUN = (() => { const v = [Math.sin(az)*Math.cos(el), Math.sin(el), -Math.cos(az)*Math.cos(el)]; const l = Math.hypot(...v); return v.map(x => x/l); })();
+const HORIZON = [0.80, 0.84, 0.86];
+const LVP = M.mul(M.ortho(-140, 140, -140, 140, 1, 700), M.look(SUN.map(v => v*350), [0,0,0], [0,1,0]));
+let showFuture = true, shadowDirty = true;
+function renderShadow() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFB); gl.viewport(0, 0, SM, SM);
+  gl.clear(gl.DEPTH_BUFFER_BIT); gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
+  gl.useProgram(PS); gl.uniformMatrix4fv(gl.getUniformLocation(PS, "uLVP"), false, LVP);
+  for (const g of showFuture ? [G.base, G.fut] : [G.base]) { gl.bindVertexArray(g.svao); gl.drawArrays(gl.TRIANGLES, 0, g.n); }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); shadowDirty = false;
+}
+function drawScene(VP, eye, fb, w, h) {
+  if (shadowDirty) renderShadow();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.viewport(0, 0, w, h);
+  gl.clearColor(...HORIZON, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.disable(gl.DEPTH_TEST); gl.useProgram(PK);
+  gl.uniformMatrix4fv(gl.getUniformLocation(PK, "uInvVP"), false, M.inv(VP));
+  gl.uniform3fv(gl.getUniformLocation(PK, "uSun"), SUN); gl.uniform3fv(gl.getUniformLocation(PK, "uHorizon"), HORIZON);
+  gl.bindVertexArray(quadVAO); gl.drawArrays(gl.TRIANGLES, 0, 6);
+  gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.useProgram(P);
+  gl.uniformMatrix4fv(gl.getUniformLocation(P, "uVP"), false, VP);
+  gl.uniformMatrix4fv(gl.getUniformLocation(P, "uLVP"), false, LVP);
+  gl.uniform3fv(gl.getUniformLocation(P, "uSun"), SUN); gl.uniform3fv(gl.getUniformLocation(P, "uEye"), eye);
+  gl.uniform3fv(gl.getUniformLocation(P, "uHorizon"), HORIZON); gl.uniform1f(gl.getUniformLocation(P, "uTexel"), 1/SM);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, shadowTex); gl.uniform1i(gl.getUniformLocation(P, "uShadow"), 0);
+  for (const g of showFuture ? [G.base, G.fut] : [G.base]) { gl.bindVertexArray(g.vao); gl.drawArrays(gl.TRIANGLES, 0, g.n); }
+  gl.bindVertexArray(null);
+}
+
+// ================= Cámara y controles =================
+const EYE_H = 1.65;
+const AERIAL = [
+  { id: "so", name: "Desde el suroeste", target: [-5, 0, 0], yaw: -0.55, pitch: 0.5, dist: 200 },
+  { id: "ne", name: "Desde el noreste", target: [0, 0, -10], yaw: 2.45, pitch: 0.5, dist: 240 },
+  { id: "plano", name: "Planta (de arriba)", target: [0, 0, -2], yaw: 0, pitch: 1.5, dist: 300 },
+  { id: "proceso", name: "Planta de proceso", target: W(70, 72, 0), yaw: 0.85, pitch: 0.5, dist: 80 },
+  { id: "granja", name: "Naves y almacén", target: W(103, 28, 0), yaw: -0.35, pitch: 0.5, dist: 105 },
+];
+const WALK = [
+  { id: "acceso", name: "Acceso principal", at: [28, 118], look: [60, 86] },
+  { id: "oficina", name: "Frente a la oficina", at: [46, 99], look: [65, 70] },
+  { id: "patio", name: "Patio de maniobras", at: [93, 81], look: [76, 69] },
+  { id: "naves", name: "Entre naves", at: [70, 28], look: [128, 28] },
+  { id: "composta", name: "Composta", at: [158, 36], look: [174, 15] },
+  { id: "cuarentena", name: "Cuarentena", at: [131, 116], look: [117, 107] },
+  { id: "carretera", name: "Desde la carretera", at: off(along(FRONT[0], 40), -19), look: [55, 80] },
+];
+const cam = { mode: "aerial", target: [-5,0,0], yaw: -0.55, pitch: 0.5, dist: 200, eye: [0, EYE_H, 0], fov: 50, wfov: 75 };
+let anim = null, dirty = true;
+
+function aerialEye(c) { return [c.target[0] + c.dist*Math.cos(c.pitch)*Math.sin(c.yaw), c.target[1] + c.dist*Math.sin(c.pitch), c.target[2] + c.dist*Math.cos(c.pitch)*Math.cos(c.yaw)]; }
+function walkLook(c) { return [c.eye[0] - Math.sin(c.yaw)*Math.cos(c.pitch), c.eye[1] + Math.sin(c.pitch), c.eye[2] - Math.cos(c.yaw)*Math.cos(c.pitch)]; }
+function current() {
+  if (cam.mode === "aerial") return { eye: aerialEye(cam), at: cam.target, fov: cam.fov };
+  return { eye: cam.eye, at: walkLook(cam), fov: cam.wfov };
+}
+function setAerial(v, instant) {
+  const from = current();
+  cam.mode = "aerial"; cam.target = v.target.slice(); cam.yaw = v.yaw; cam.pitch = v.pitch; cam.dist = v.dist;
+  startAnim(from, instant);
+}
+function setWalk(v, instant) {
+  const from = current();
+  cam.mode = "walk"; cam.eye = W(v.at[0], v.at[1], EYE_H);
+  const d = [v.look[0]-v.at[0], v.look[1]-v.at[1]];
+  cam.yaw = Math.atan2(-d[0], -d[1]); cam.pitch = 0.02; cam.wfov = 75;
+  startAnim(from, instant);
+}
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function startAnim(from, instant) { anim = (instant || reduced) ? null : { from, t0: performance.now(), dur: 1100 }; dirty = true; }
+function lerp(a, b, t) { return a.map((v, i) => v + (b[i]-v)*t); }
+
+let VPcur = null, W_ = 1, H_ = 1;
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = Math.round(canvas.clientWidth*dpr), h = Math.round(canvas.clientHeight*dpr);
+  if (w !== canvas.width || h !== canvas.height) { canvas.width = w; canvas.height = h; dirty = true; }
+  if (!dirty && !anim) return;
+  let view = current();
+  if (anim) {
+    let t = Math.min(1, (now - anim.t0)/anim.dur); const e = t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+    const lift = Math.sin(Math.PI*e) * (cam.mode === "walk" && anim.from.eye[1] < 20 ? 25 : 0);
+    view = { eye: lerp(anim.from.eye, view.eye, e), at: lerp(anim.from.at, view.at, e), fov: anim.from.fov + (view.fov-anim.from.fov)*e };
+    view.eye[1] += lift;
+    if (t >= 1) anim = null;
+  }
+  W_ = w; H_ = h;
+  const near = view.eye[1] < 10 ? 0.15 : 1.0;
+  VPcur = M.mul(M.persp(view.fov*Math.PI/180, w/h, near, 4000), M.look(view.eye, view.at, [0,1,0]));
+  drawScene(VPcur, view.eye, null, w, h);
+  placeLabels();
+  dirty = false;
+}
+
+// etiquetas
+const labelsEl = document.getElementById("labels");
+const labelEls = LABELS.map(L => { const d = document.createElement("div"); d.className = "lbl" + (L.future ? " fut" : ""); d.innerHTML = `<b>${L.id}</b>${L.text}`; labelsEl.appendChild(d); return d; });
+let showLabels = true;
+function placeLabels() {
+  const cw = canvas.clientWidth, ch = canvas.clientHeight, v = VPcur, maxD = cam.mode === "walk" ? 140 : 520;
+  const cand = [];
+  LABELS.forEach((L, i) => {
+    const el = labelEls[i]; el.style.display = "none";
+    if (!showLabels || (L.future && !showFuture)) return;
+    const p = L.p;
+    const x = v[0]*p[0]+v[4]*p[1]+v[8]*p[2]+v[12], y = v[1]*p[0]+v[5]*p[1]+v[9]*p[2]+v[13], wv = v[3]*p[0]+v[7]*p[1]+v[11]*p[2]+v[15];
+    if (wv <= 0.5 || wv > maxD) return;
+    const sx = (x/wv*0.5+0.5)*cw, sy = (1-(y/wv*0.5+0.5))*ch;
+    if (sx < -60 || sx > cw+60 || sy < 70 || sy > ch-120) return;
+    cand.push({ i, sx, sy, wv });
+  });
+  cand.sort((a, b) => a.wv - b.wv);
+  const placed = [];
+  for (const c of cand) {
+    const L = LABELS[c.i], w = L.w || 160, h = 24;
+    const r = [c.sx - w/2, c.sy - h, c.sx + w/2, c.sy];
+    if (placed.some(q => r[0] < q[2]+4 && r[2]+4 > q[0] && r[1] < q[3]+2 && r[3]+2 > q[1])) continue;
+    placed.push(r);
+    const el = labelEls[c.i]; el.style.display = "flex"; el.style.left = c.sx + "px"; el.style.top = c.sy + "px";
+  }
+}
+function measureLabels() { LABELS.forEach((L, i) => { const el = labelEls[i]; el.style.display = "flex"; L.w = el.offsetWidth; el.style.display = "none"; }); dirty = true; }
+measureLabels();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(measureLabels);
+
+// interacción
+const pointers = new Map(); let pinch = null;
+canvas.addEventListener("pointerdown", e => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, shift: e.shiftKey || e.button === 2 }); canvas.classList.add("dragging"); anim = null; });
+canvas.addEventListener("pointerup", e => { pointers.delete(e.pointerId); pinch = null; if (!pointers.size) canvas.classList.remove("dragging"); });
+canvas.addEventListener("pointercancel", e => { pointers.delete(e.pointerId); pinch = null; });
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+function pan(dx, dy) {
+  const k = cam.dist * 0.0016;
+  const fx = -Math.sin(cam.yaw), fz = -Math.cos(cam.yaw), rx = Math.cos(cam.yaw), rz = -Math.sin(cam.yaw);
+  cam.target[0] -= (rx*dx - fx*dy)*k; cam.target[2] -= (rz*dx - fz*dy)*k;
+  cam.target[0] = Math.max(-400, Math.min(400, cam.target[0])); cam.target[2] = Math.max(-400, Math.min(400, cam.target[2]));
+}
+function zoom(f) {
+  if (cam.mode === "aerial") cam.dist = Math.max(25, Math.min(650, cam.dist * f));
+  else cam.wfov = Math.max(30, Math.min(95, cam.wfov * f));
+  dirty = true;
+}
+canvas.addEventListener("pointermove", e => {
+  const p = pointers.get(e.pointerId); if (!p) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()]; const d = Math.hypot(a.x-b.x, a.y-b.y), mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
+    if (pinch) { zoom(pinch.d / d); if (cam.mode === "aerial") pan(mx - pinch.mx, my - pinch.my); }
+    pinch = { d, mx, my }; dirty = true; return;
+  }
+  if (cam.mode === "aerial") {
+    if (p.shift) pan(dx, dy);
+    else { cam.yaw -= dx*0.005; cam.pitch = Math.max(0.08, Math.min(1.53, cam.pitch + dy*0.004)); }
+  } else {
+    const k = cam.wfov/75;
+    cam.yaw += dx*0.0042*k; cam.pitch = Math.max(-1.2, Math.min(1.3, cam.pitch + dy*0.0042*k));
+  }
+  dirty = true;
+});
+canvas.addEventListener("wheel", e => { e.preventDefault(); zoom(Math.exp(e.deltaY*0.0012)); }, { passive: false });
+window.addEventListener("keydown", e => {
+  const step = { ArrowLeft: [0.06, 0], ArrowRight: [-0.06, 0], ArrowUp: [0, 0.05], ArrowDown: [0, -0.05] }[e.key];
+  if (!step || e.target.closest("button")) return;
+  if (cam.mode === "aerial") { cam.yaw += step[0]; cam.pitch = Math.max(0.08, Math.min(1.53, cam.pitch - step[1])); }
+  else { cam.yaw += step[0]; cam.pitch = Math.max(-1.2, Math.min(1.3, cam.pitch + step[1])); }
+  dirty = true;
+});
+
+// interfaz
+const viewsEl = document.getElementById("views"), hint = document.getElementById("hint");
+const mA = document.getElementById("m-aerial"), mW = document.getElementById("m-walk");
+let activeView = null;
+function renderChips() {
+  const list = cam.mode === "aerial" ? AERIAL : WALK;
+  viewsEl.innerHTML = "";
+  for (const v of list) { const b = document.createElement("button"); b.className = "chip"; b.textContent = v.name; b.setAttribute("aria-pressed", String(v.id === activeView));
+    b.addEventListener("click", () => go(v.id)); viewsEl.appendChild(b); }
+  mA.setAttribute("aria-pressed", String(cam.mode === "aerial")); mW.setAttribute("aria-pressed", String(cam.mode === "walk"));
+  hint.textContent = cam.mode === "aerial" ? "Arrastra para girar · rueda o pellizco para acercar · Shift o dos dedos para desplazar" : "Arrastra para mirar alrededor (360°) · rueda o pellizco para acercar";
+}
+function go(id, instant) {
+  const a = AERIAL.find(v => v.id === id), w = WALK.find(v => v.id === id);
+  if (a) setAerial(a, instant); else if (w) setWalk(w, instant); else return;
+  activeView = id; renderChips();
+  try { history.replaceState(null, "", "#" + id); } catch (e) {}
+}
+mA.addEventListener("click", () => go("so"));
+mW.addEventListener("click", () => go("acceso"));
+const tL = document.getElementById("t-labels"), tF = document.getElementById("t-future");
+tL.addEventListener("click", () => { showLabels = !showLabels; tL.setAttribute("aria-pressed", String(showLabels)); dirty = true; });
+tF.addEventListener("click", () => { showFuture = !showFuture; tF.setAttribute("aria-pressed", String(showFuture)); shadowDirty = true; dirty = true; });
+window.addEventListener("hashchange", () => { const id = location.hash.slice(1); if (id && id !== activeView) go(id); });
+window.addEventListener("resize", () => { dirty = true; });
+
+const startId = location.hash.slice(1);
+go([...AERIAL, ...WALK].some(v => v.id === startId) ? startId : "so", true);
+requestAnimationFrame(frame);
+
+// ================= Panorama equirectangular (360°) =================
+function panorama(id, outW = 4096, face = 1536) {
+  const v = WALK.find(x => x.id === id); if (!v) return null;
+  const eye = W(v.at[0], v.at[1], EYE_H);
+  const d = [v.look[0]-v.at[0], v.look[1]-v.at[1]], yaw0 = Math.atan2(-d[0], -d[1]);
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, face, face, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  const rb = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, rb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, face, face);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb);
+  // caras: +X, -X, +Y, -Y, +Z, -Z en un marco girado al rumbo inicial
+  const cy = Math.cos(yaw0), sy = Math.sin(yaw0);
+  const rot = (x, y, z) => [x*cy + z*sy, y, -x*sy + z*cy];
+  const faces = [[[1,0,0],[0,1,0]],[[-1,0,0],[0,1,0]],[[0,1,0],[0,0,-1]],[[0,-1,0],[0,0,1]],[[0,0,1],[0,1,0]],[[0,0,-1],[0,1,0]]];
+  const data = [];
+  const P90 = M.persp(Math.PI/2, 1, 0.15, 4000);
+  for (const [dir, up] of faces) {
+    const D = rot(...dir), Up = rot(...up);
+    const VP = M.mul(P90, M.look(eye, [eye[0]+D[0], eye[1]+D[1], eye[2]+D[2]], Up));
+    drawScene(VP, eye, fb, face, face);
+    const px = new Uint8Array(face*face*4); gl.readPixels(0, 0, face, face, gl.RGBA, gl.UNSIGNED_BYTE, px); data.push({ px, D, Up });
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fb); gl.deleteTexture(tex); gl.deleteRenderbuffer(rb);
+  for (const f of data) { const D = f.D, Up = f.Up; f.R = [Up[1]*D[2]-Up[2]*D[1], Up[2]*D[0]-Up[0]*D[2], Up[0]*D[1]-Up[1]*D[0]]; f.R = f.R.map(x => -x); }
+  const outH = outW/2, cv = document.createElement("canvas"); cv.width = outW; cv.height = outH;
+  const ctx = cv.getContext("2d"), img = ctx.createImageData(outW, outH), o = img.data;
+  for (let j=0;j<outH;j++) { const lat = Math.PI/2 - (j+0.5)/outH*Math.PI, cl = Math.cos(lat), sl = Math.sin(lat);
+    for (let i=0;i<outW;i++) { const lon = (i+0.5)/outW*Math.PI*2 - Math.PI;
+      const l = [Math.sin(lon)*cl, sl, -Math.cos(lon)*cl]; const dd = rot(...l);
+      let best = 0, bv = -2; for (let k=0;k<6;k++) { const f = data[k]; const s = f.D[0]*dd[0]+f.D[1]*dd[1]+f.D[2]*dd[2]; if (s > bv) { bv = s; best = k; } }
+      const f = data[best];
+      const u = (f.R[0]*dd[0]+f.R[1]*dd[1]+f.R[2]*dd[2]) / bv, vv = (f.Up[0]*dd[0]+f.Up[1]*dd[1]+f.Up[2]*dd[2]) / bv;
+      const px = Math.min(face-1, Math.max(0, Math.round((u*0.5+0.5)*face - 0.5))), py = Math.min(face-1, Math.max(0, Math.round((vv*0.5+0.5)*face - 0.5)));
+      const si = (py*face + px)*4, di = (j*outW + i)*4;
+      o[di]=f.px[si]; o[di+1]=f.px[si+1]; o[di+2]=f.px[si+2]; o[di+3]=255; } }
+  ctx.putImageData(img, 0, 0); dirty = true;
+  return cv.toDataURL("image/jpeg", 0.9);
+}
+window.ZAKI3D = { panorama, go, views: () => WALK.map(v => v.id) };
+})();
+</script>
+
+</body></html>
